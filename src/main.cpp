@@ -40,9 +40,13 @@ void AC_init();
 void sonar();
 void adc_init();
 void button_init();
+void timer2_init();
 
 //global variables
 bool debug_mode = 0;
+
+//timer 2
+volatile uint8_t matchCount = 0;
 
 //ADC
 volatile uint16_t adc;
@@ -98,6 +102,17 @@ ISR(USART_RX_vect) {
 }
 
 //INTURUPTS
+
+ISR(TIMER2_COMPA_vect) {
+  matchCount++;
+  if(matchCount >= 100) {
+    matchCount = 0;
+    if (!bitCheck(ADCSRA, ADSC)) {
+      ADCSRA |= (1 << ADSC);
+    }
+  }
+
+}
 
 ISR(TIMER1_CAPT_vect) {
   icr1 = ICR1;
@@ -187,6 +202,19 @@ void sonar() {
 }
 
 //INITs
+
+void timer2_init() {
+
+  bitSet(TCCR2A, WGM21);
+
+  TCCR2B = (1 << CS22) | (1 << CS21) | (1 << CS20);
+
+  OCR2B = 156;
+
+  bitSet(TIMSK2, OCIE2A);
+
+
+}
 void IC_init() {
   TCCR1A = 0;
   TCCR1B = 0;
