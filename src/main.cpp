@@ -16,6 +16,13 @@
 //sonar
 #define pinTrigger PD4
 
+<<<<<<< HEAD
+=======
+//buttons
+#define calThreshBut PB4 //calibrate threshold button
+#define flipLogBut PD7 //flip logic button
+
+>>>>>>> a4b0fba3568990752e88d8d993755ffd0e9db7f2
 //Mode Abstraction
 #define MODE_Day 0
 #define MODE_Night 1
@@ -35,8 +42,15 @@ void IC_init();
 void AC_init();
 void sonar();
 void adc_init();
+<<<<<<< HEAD
 
 //global variables
+=======
+void button_init();
+
+//global variables
+bool debug_mode = 0;
+>>>>>>> a4b0fba3568990752e88d8d993755ffd0e9db7f2
 
 //ADC
 volatile uint16_t adc;
@@ -54,7 +68,10 @@ float tRise = 0;
 volatile float tHigh;
 volatile float tLow;
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> a4b0fba3568990752e88d8d993755ffd0e9db7f2
 // Sonar Variables
 volatile uint8_t *ddr_sonar = &DDRD;
 volatile uint8_t *port_sonar = &PORTD;
@@ -78,6 +95,15 @@ ISR(USART_RX_vect) {
       *ptr = '\0';
       flag_read_done = 1;
       usart_flush();
+<<<<<<< HEAD
+=======
+
+      int mode_input = atoi(usart_buf); //reads input
+      if(mode_input == 0 || mode_input == 1) { //checks if input is valid
+        debug_mode = mode_input; //if valid, set debug mode
+      }
+
+>>>>>>> a4b0fba3568990752e88d8d993755ffd0e9db7f2
       return;
     }
     else {
@@ -102,13 +128,27 @@ ISR(TIMER1_CAPT_vect) {
     // usart_send_string("Fall");
     // usart_send_num(ICR1, 6, 6);
     dmm = tLow * 343 / 2. * 1000.;
+<<<<<<< HEAD
+=======
+
+    if(debug_mode) { //if debug mode
+      usart_send_string(">Dmm:");
+      usart_send_num(dmm, 3, 3);
+      usart_send_string("\n");
+    }
+>>>>>>> a4b0fba3568990752e88d8d993755ffd0e9db7f2
   }
   bitToggle(TCCR1B, ICES1);
 }
 
 ISR(ADC_vect) {
   adc = ADC;
+<<<<<<< HEAD
   float resistance = 10000.0 * adc / (1023.0 - adc); // R_t
+=======
+  //float resistance = 10000.0 * adc / (1023.0 - adc); // R_t
+  float resistance = log(10000.0 * ((1023.0 / adc - 1)));
+>>>>>>> a4b0fba3568990752e88d8d993755ffd0e9db7f2
 
   // Constants
   float B = 3950.0;
@@ -116,6 +156,7 @@ ISR(ADC_vect) {
   float R0 = 10000.0;
 
   // Temperature calculation
+<<<<<<< HEAD
   float tempK = 1.0 / (log(resistance / R0) / B + (1.0 / T0));
   float tempC = tempK - 273.15;
 
@@ -130,11 +171,46 @@ ISR(ADC_vect) {
 
 
 
+=======
+  //float tempK = 1.0 / (log(resistance / R0) / B + (1.0 / T0));
+  float tempK = 1.0 / (0.001129148 + (0.000234125 + (0.0000000876741 * resistance * resistance)) * resistance);
+  float tempC = tempK - 273.15;
+
+  if(debug_mode) { //if in debug mode
+    usart_send_string(">tempC:");
+    usart_send_num(tempC, 3, 2); // Send Celsius with 2 decimal places
+    usart_send_string("\n");
+    //ADCSRA |= (1 << ADSC);
+  }
+
+  _delay_us(20000);
+}
+
+ISR(PCINT0_vect) {
+  _delay_ms(10);
+  if(!bitRead(PINB, calThreshBut)) {
+    //do threshold stuff here
+    //likely something like:
+    //threshold = adc
+  }
+}
+
+ISR(PCINT2_vect) {
+  _delay_ms(10);
+  if(!bitRead(PIND, flipLogBut)) {
+    //flig logic button flag
+  }
+}
+>>>>>>> a4b0fba3568990752e88d8d993755ffd0e9db7f2
 
 
 
 int main() {
   usart_init_v2(9600);
+<<<<<<< HEAD
+=======
+  button_init();
+>>>>>>> a4b0fba3568990752e88d8d993755ffd0e9db7f2
   sei();
 
 }
@@ -196,6 +272,22 @@ void adc_init() {
   ADCSRA |= (1 << ADSC);
 }
 
+<<<<<<< HEAD
+=======
+void button_init() {
+  bitClear(DDRB, calThreshBut);
+  bitClear(DDRD, flipLogBut);
+
+  bitSet(PORTB, calThreshBut);
+  bitSet(PORTD, flipLogBut);
+
+  PCICR |= 1 << PCIE0;
+  PCMSK0 |= 1 << PCINT4;
+
+  PCICR |= 1 << PCIE2;
+  PCMSK2 |= 1 << PCINT23;
+}
+>>>>>>> a4b0fba3568990752e88d8d993755ffd0e9db7f2
 
 
 /*USART FUNCTIONS
