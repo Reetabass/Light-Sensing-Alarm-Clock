@@ -26,10 +26,7 @@
 #define MODE_off 2
 
 typedef enum{MODE_DAY, MODE_NIGHT, MODE_OFF} MODE;
-
 MODE currentState = MODE_OFF;
-
-
 
 
 //USART Declerations
@@ -58,6 +55,8 @@ volatile uint8_t matchCount = 0;
 //ADC
 volatile uint16_t adc;
 volatile float temp;
+volatile float lightMeasure;
+volatile uint8_t adcChannel = 0;
 
 //IC
 float TimeOverflow_1;
@@ -132,8 +131,7 @@ ISR(TIMER1_CAPT_vect) {
   else {
     tRise = timeStamp;
     tLow = tRise - tFall;
-    // usart_send_string("Fall");
-    // usart_send_num(ICR1, 6, 6);
+    
     dmm = tLow * 343 / 2. * 1000.;
 
     if(debug_mode) { //if debug mode
@@ -146,26 +144,49 @@ ISR(TIMER1_CAPT_vect) {
 }
 
 ISR(ADC_vect) {
-  adc = ADC;
-  //float resistance = 10000.0 * adc / (1023.0 - adc); // R_t
-  float resistance = log(10000.0 * ((1023.0 / adc - 1)));
+  
+  if (adcChannel == 0) {
+    
+    lightMeasure = adc;
 
-  // Constants
-  float B = 3950.0;
-  float T0 = 298.15; // 25°C in Kelvin
-  float R0 = 10000.0;
+    ADMUX = (ADMUX & 0xF0) | 0b0101;
+    adcChannel = 1;
 
-  // Temperature calculation
-  //float tempK = 1.0 / (log(resistance / R0) / B + (1.0 / T0));
-  float tempK = 1.0 / (0.001129148 + (0.000234125 + (0.0000000876741 * resistance * resistance)) * resistance);
-  float tempC = tempK - 273.15;
-
-  if(debug_mode) { //if in debug mode
-    usart_send_string(">tempC:");
-    usart_send_num(tempC, 3, 2); // Send Celsius with 2 decimal places
+    if(debug_mode) { //if in debug mode
+    usart_send_string(">light:");
+    usart_send_num(lightMeasure, 3, 2); // Send Celsius with 2 decimal places
     usart_send_string("\n");
-    //ADCSRA |= (1 << ADSC);
   }
+
+  }
+
+  else {
+    
+    adc = ADC;
+    //float resistance = 10000.0 * adc / (1023.0 - adc); // R_t
+    float resistance = log(10000.0 * ((1023.0 / adc - 1)));
+
+    // Constants
+    float B = 3950.0;
+    float T0 = 298.15; // 25°C in Kelvin
+    float R0 = 10000.0;
+
+    // Temperature calculation
+    //float tempK = 1.0 / (log(resistance / R0) / B + (1.0 / T0));
+    float tempK = 1.0 / (0.001129148 + (0.000234125 + (0.0000000876741 * resistance * resistance)) * resistance);
+    float tempC = tempK - 273.15;
+    
+    if(debug_mode) { //if in debug mode
+      usart_send_string(">tempC:");
+      usart_send_num(tempC, 3, 2); // Send Celsius with 2 decimal places
+      usart_send_string("\n");
+    }
+
+    ADMUX = (ADMUX & 0xF0) | 0b0100;
+    adcChannel = 1;
+
+  }
+
   _delay_us(20000);
 }
 
@@ -181,7 +202,7 @@ ISR(PCINT0_vect) {
 ISR(PCINT2_vect) {
   _delay_ms(10);
   if(!bitRead(PIND, flipLogBut)) {
-    //flig logic button flag
+    currentState = (MODE)((currentState + 1) % 3);
   }
 }
 
@@ -204,7 +225,7 @@ int main() {
 
     if (currentState == MODE_DAY) {
 
-     if (adc > ){
+     if (lightMeasure > ){
         //set buzzer
         sonar();
         //turnoff if dmm is less than somehting
@@ -212,16 +233,14 @@ int main() {
 
     }
     if (currentState == MODE_NIGHT) {
-      if (adc > ){
+      if (lightMeasure > ){
         //set buzzer
         sonar();
         //turnoff if dmm is less than somehting
       }
     }
     else (currentState == MODE_OFF) {
-      if (adc > ){
-        
-      }
+      
     }
 
     
@@ -284,6 +303,7 @@ void adc_init() {
   // This sets ADC2 without affecting ref bits only touches the last four bit
 
   bitSet(ADMUX, MUX1);
+  bitSet(ADMUX, MUX2);
 
   //ADIE is bit 3 and it enables inturept
   //ADEN is bit 7 and it enables ADC
