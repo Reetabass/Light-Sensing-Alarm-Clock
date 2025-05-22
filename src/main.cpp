@@ -25,6 +25,13 @@
 #define MODE_Night 1
 #define MODE_off 2
 
+typedef enum{MODE_DAY, MODE_NIGHT, MODE_OFF} MODE;
+
+MODE currentState = MODE_OFF;
+
+
+
+
 //USART Declerations
 void usart_init(float baud);
 void usart_send_byte(unsigned char data);
@@ -191,7 +198,34 @@ int main() {
   void timer2_init();
 
   while (1) {
-    sonar();
+    
+
+    //psuedo code
+
+    if (currentState == MODE_DAY) {
+
+     if (adc > ){
+        //set buzzer
+        sonar();
+        //turnoff if dmm is less than somehting
+      }
+
+    }
+    if (currentState == MODE_NIGHT) {
+      if (adc > ){
+        //set buzzer
+        sonar();
+        //turnoff if dmm is less than somehting
+      }
+    }
+    else (currentState == MODE_OFF) {
+      if (adc > ){
+        
+      }
+    }
+
+    
+    
   }
 
 }
