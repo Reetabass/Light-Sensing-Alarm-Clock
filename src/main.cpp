@@ -159,7 +159,6 @@ ISR(ADC_vect) {
     usart_send_string("\n");
     //ADCSRA |= (1 << ADSC);
   }
-
   _delay_us(20000);
 }
 
@@ -185,6 +184,15 @@ int main() {
   usart_init_v2(9600);
   button_init();
   sei();
+  void IC_init();
+  void AC_init();
+  void adc_init();
+  void button_init();
+  void timer2_init();
+
+  while (1) {
+    sonar();
+  }
 
 }
 
