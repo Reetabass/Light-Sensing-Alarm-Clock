@@ -57,6 +57,8 @@ void buzzer_off();
 
 //global variables
 bool debug_mode = 0;
+volatile uint8_t alarm_mode = 0;
+volatile uint8_t alarm_active = 0;
 
 //timer 2
 volatile uint8_t matchCount = 0;
@@ -117,6 +119,19 @@ ISR(USART_RX_vect) {
 }
 
 //INTURUPTS
+
+ISR(INT0_vect) {
+  alarm_mode ^= 1; // Toggle mode
+
+}
+ISR(INT1_vect) {
+  currentState = (MODE)((currentState + 1) % 3);
+  if (debug_mode) {
+    usart_send_string(">INT1: Mode toggled to ");
+    usart_send_num(currentState, 1, 0);
+    usart_send_string("\n");
+  }
+}
 
 ISR(TIMER2_COMPA_vect) {
   matchCount++;
@@ -206,16 +221,16 @@ ISR(ADC_vect) {
     //likely something like:
     //threshold = adc
   }
-} */
+}
 
 
 
-ISR(PCINT2_vect) {
+/*ISR(PCINT2_vect) {
   _delay_ms(10);
   if(!bitRead(PIND, flipLogBut)) {
     currentState = (MODE)((currentState + 1) % 3);
   }
-}
+} */
 
 
 
@@ -229,54 +244,41 @@ int main() {
   adc_init();
   button_init();
   timer2_init();
+  ext_interrupt_init();
+  timer0_fast_pwm_buzzer();
+  bitClear(TCCR0A, COM0A1);
+  bitClear(TCCR0A, COM0B1);
 
   while (1) {
-    
+  uint8_t lightTrigger = 0;
 
-    //psuedo code
-
-    if (currentState == MODE_DAY) {
-     if (lightMeasure > LIGHT_THRESHOLD ){
-        sonar();
-        buzzer_on();
-        if(dmm < DISTANCE_THRESHOLD){
-          buzzer_off();
-        }
-
-        //turnoff if dmm is less than somehting
-      }
-
-    }
-    else if (currentState == MODE_NIGHT) {
-      if (lightMeasure < LIGHT_THRESHOLD){
-        sonar();
-        buzzer_on();
-        if(dmm < DISTANCE_THRESHOLD){
-          buzzer_off();
-        }
-        //turnoff if dmm is less than somehting
-      }
-    }
-    else if (currentState == MODE_OFF) {
-      buzzer_off();
-      
-    }
-
-    
-    
+  if (currentState == MODE_DAY && lightMeasure > LIGHT_THRESHOLD) {
+    lightTrigger = 1;
+  } else if (currentState == MODE_NIGHT && lightMeasure < LIGHT_THRESHOLD) {
+    lightTrigger = 1;
   }
+
+  if (lightTrigger && currentState != MODE_OFF) {
+    sonar(); // update distance
+
+    if (dmm >= DISTANCE_THRESHOLD && !alarm_active) {
+      trigger_alarm();
+    } else if (dmm < DISTANCE_THRESHOLD && alarm_active) {
+      stop_alarm();
+    }
+  } else {
+    if (alarm_active) {
+      stop_alarm();
+    }
+  }
+
+  _delay_ms(100);
+}
 
 }
 
 //Functions
 
-void buzzer_on() {
-  bitSet(PORTD, pinBuzzer);
-}
-
-void buzzer_off() {
-  bitClear(PORTD, pinBuzzer);
-}
 void sonar() {
   numOV_1 = 0;
 
@@ -288,7 +290,55 @@ void sonar() {
   bitClear(PORTD, pinTrigger);
 }
 
+void trigger_alarm() {
+  alarm_active = 1;
+  if (alarm_mode == 0) {
+    timer0_fast_pwm_buzzer();
+  } else {
+    timer0_phase_correct_pwm_led();
+  }
+  if (debug_mode) usart_send_string(">Alarm ON\n");
+}
+
+void stop_alarm() {
+  alarm_active = 0;
+  TCCR0A &= ~((1 << COM0A1) | (1 << COM0B1));
+  if (debug_mode) usart_send_string(">Alarm OFF\n");
+}
+
 //INITs
+
+void timer0_phase_correct_pwm_led() {
+  bitSet(DDRD, PD5); // OC0B = output
+  TCCR0A = (1 << WGM00);                     // Phase-Correct PWM
+  TCCR0A |= (1 << COM0B1);                   // Non-inverting OC0B
+  TCCR0B = (1 << CS01) | (1 << CS00);        // Prescaler 64
+  OCR0B = 200; // Visible LED flash
+}
+
+
+void timer0_fast_pwm_buzzer() {
+  bitSet(DDRD, PD6); // OC0A = output
+  TCCR0A = (1 << WGM00) | (1 << WGM01);           // Fast PWM
+  TCCR0A |= (1 << COM0A1);                        // Non-inverting OC0A
+  TCCR0B = (1 << CS01) | (1 << CS00);             // Prescaler 64
+  OCR0A = 128; // 50% duty
+}
+
+void ext_interrupt_init() {
+  
+  bitClear(DDRD, PD2);         // INT0 input
+  bitSet(EIMSK, INT0);         // Enable INT0
+  EICRA |= (1 << ISC01);       // Falling edge
+  EICRA &= ~(1 << ISC00);
+
+  bitClear(DDRD, PD3);
+  bitSet(PORTD, PD3); // pull-up
+  bitSet(EIMSK, INT1);
+  EICRA |= (1 << ISC11);  // falling edge
+  EICRA &= ~(1 << ISC10);
+}
+
 
 void buzzer_init(){
   bitSet(DDRD, pinBuzzer);
@@ -324,7 +374,7 @@ void AC_init() {
   bitClear(DDRD, PD6); // Set PD6 as input
   bitClear(DDRD, PD7); // Set PD7 as input
   //bitSet(ACSR, ACBG); // Bandgap Refrence enabled
-  bitSet(ACSR, ACIC); //Input Capture inturprs enabled
+  //bitSet(ACSR, ACIC); //Input Capture inturprs enabled
 }
 
 void adc_init() {
@@ -351,7 +401,7 @@ void adc_init() {
 }
 
 void button_init() {
-  bitClear(DDRB, calThreshBut);
+  /*bitClear(DDRB, calThreshBut);
   bitClear(DDRD, flipLogBut);
 
   bitSet(PORTB, calThreshBut);
@@ -361,7 +411,7 @@ void button_init() {
   PCMSK0 |= 1 << PCINT4;
 
   PCICR |= 1 << PCIE2;
-  PCMSK2 |= 1 << PCINT23;
+  PCMSK2 |= 1 << PCINT23; */
 }
 
 
