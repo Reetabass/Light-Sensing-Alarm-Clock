@@ -13,6 +13,9 @@
 #define max 255
 #define velSound 343
 
+//buzzer
+#define pinBuzzer PD0
+
 //sonar
 #define pinTrigger PD4
 
@@ -24,6 +27,10 @@
 #define MODE_Day 0
 #define MODE_Night 1
 #define MODE_off 2
+
+//thresholds
+#define LIGHT_THRESHOLD 700
+#define DISTANCE_THRESHOLD 200
 
 typedef enum{MODE_DAY, MODE_NIGHT, MODE_OFF} MODE;
 MODE currentState = MODE_OFF;
@@ -45,6 +52,8 @@ void sonar();
 void adc_init();
 void button_init();
 void timer2_init();
+void buzzer_on();
+void buzzer_off();
 
 //global variables
 bool debug_mode = 0;
@@ -183,21 +192,23 @@ ISR(ADC_vect) {
     }
 
     ADMUX = (ADMUX & 0xF0) | 0b0100;
-    adcChannel = 1;
+    adcChannel = 0;
 
   }
 
   _delay_us(20000);
 }
 
-ISR(PCINT0_vect) {
+/*ISR(PCINT0_vect) {
   _delay_ms(10);
   if(!bitRead(PINB, calThreshBut)) {
     //do threshold stuff here
     //likely something like:
     //threshold = adc
   }
-}
+} */
+
+
 
 ISR(PCINT2_vect) {
   _delay_ms(10);
@@ -212,11 +223,12 @@ int main() {
   usart_init_v2(9600);
   button_init();
   sei();
-  void IC_init();
-  void AC_init();
-  void adc_init();
-  void button_init();
-  void timer2_init();
+  IC_init();
+  //AC_init();
+  buzzer_init();
+  adc_init();
+  button_init();
+  timer2_init();
 
   while (1) {
     
@@ -224,22 +236,29 @@ int main() {
     //psuedo code
 
     if (currentState == MODE_DAY) {
-
-     if (lightMeasure > ){
-        //set buzzer
+     if (lightMeasure > LIGHT_THRESHOLD ){
         sonar();
+        buzzer_on();
+        if(dmm < DISTANCE_THRESHOLD){
+          buzzer_off();
+        }
+
         //turnoff if dmm is less than somehting
       }
 
     }
-    if (currentState == MODE_NIGHT) {
-      if (lightMeasure > ){
-        //set buzzer
+    else if (currentState == MODE_NIGHT) {
+      if (lightMeasure < LIGHT_THRESHOLD){
         sonar();
+        buzzer_on();
+        if(dmm < DISTANCE_THRESHOLD){
+          buzzer_off();
+        }
         //turnoff if dmm is less than somehting
       }
     }
-    else (currentState == MODE_OFF) {
+    else if (currentState == MODE_OFF) {
+      buzzer_off();
       
     }
 
@@ -251,6 +270,13 @@ int main() {
 
 //Functions
 
+void buzzer_on() {
+  bitSet(PORTD, pinBuzzer);
+}
+
+void buzzer_off() {
+  bitClear(PORTD, pinBuzzer);
+}
 void sonar() {
   numOV_1 = 0;
 
@@ -263,6 +289,10 @@ void sonar() {
 }
 
 //INITs
+
+void buzzer_init(){
+  bitSet(DDRD, pinBuzzer);
+}
 
 void timer2_init() {
 
@@ -284,7 +314,7 @@ void IC_init() {
   bitSet(TCCR1B, ICNC1); // Noise Cancaleation
   bitSet(TIMSK1, TOIE1); // overflow interupt enable 
   bitSet(TIMSK1, ICIE1); // Input Capture interupt enable
-  TCCR1B = 0b100; // Prescaler 1024
+  TCCR1B |= (1 << CS12); // Prescaler 256
 
   float timer1_clock_freq = 16.0e6 / 256;
   TimeOverflow_1 = 65536 / timer1_clock_freq; // max value of 16 bit / the clock freqencey = the overflow timer
