@@ -19,9 +19,6 @@
 //sonar
 #define pinTrigger PD4
 
-//buttons
-#define calThreshBut PB4 //calibrate threshold button
-#define flipLogBut PD7 //flip logic button
 
 //Mode Abstraction
 #define MODE_Day 0
@@ -29,7 +26,7 @@
 #define MODE_off 2
 
 //thresholds
-#define LIGHT_THRESHOLD 500
+#define LIGHT_THRESHOLD 400
 #define DISTANCE_THRESHOLD 200
 
 typedef enum{MODE_DAY, MODE_NIGHT, MODE_OFF} MODE;
@@ -54,7 +51,7 @@ void button_init();
 void timer2_init();
 void ext_interrupt_init();
 void timer0_fast_pwm_buzzer();
-void timer0_phase_correct_pwm_led();
+void timer0_phase_correct_pwm_buzzer();
 void trigger_alarm();
 void stop_alarm();
 
@@ -130,16 +127,27 @@ ISR (TIMER1_OVF_vect) {
 }
 
 ISR(INT0_vect) {
+  
   alarm_mode ^= 1; // Toggle mode
+
+  if (debug_mode) {
+    usart_send_string(">INT0: Alarm mode switched to ");
+    usart_send_num(alarm_mode, 1, 0);
+    usart_send_string("\n");
+  }
+
+  _delay_us(1000);
 
 }
 ISR(INT1_vect) {
+  
   currentState = (MODE)((currentState + 1) % 3);
   if (debug_mode) {
     usart_send_string(">INT1: Mode toggled to ");
     usart_send_num(currentState, 1, 0);
     usart_send_string("\n");
   }
+  _delay_us(1000);
  
 }
 
@@ -218,26 +226,6 @@ ISR(ADC_vect) {
   _delay_us(20000);
 }
 
-/*ISR(PCINT0_vect) {
-  _delay_ms(10);
-  if(!bitRead(PINB, calThreshBut)) {
-    //do threshold stuff here
-    //likely something like:
-    //threshold = adc
-  }
-}
-
-
-
-/*ISR(PCINT2_vect) {
-  _delay_ms(10);
-  if(!bitRead(PIND, flipLogBut)) {
-    currentState = (MODE)((currentState + 1) % 3);
-  }
-} */
-
-
-
 int main() {
   usart_init_v2(9600);
   button_init();
@@ -248,7 +236,6 @@ int main() {
   button_init();
   timer2_init();
   ext_interrupt_init();
-  timer0_fast_pwm_buzzer();
   bitClear(TCCR0A, COM0A1);
   bitClear(TCCR0A, COM0B1);
   debug_mode = 1;
@@ -256,16 +243,17 @@ int main() {
   while (1) {
   uint8_t lightTrigger = 0;
 
-  if (currentState == MODE_DAY && lightMeasure < LIGHT_THRESHOLD) {
+  if (currentState == MODE_DAY && lightMeasure < 300) {
     lightTrigger = 1;
     usart_send_string(">Day\n");
-  } else if (currentState == MODE_NIGHT && lightMeasure > LIGHT_THRESHOLD) {
+  }
+  if (currentState == MODE_NIGHT && lightMeasure > 400) {
     lightTrigger = 1;
     usart_send_string(">Night\n");
    
   }
 
-  if (!lightTrigger && currentState != MODE_OFF) {
+  if (lightTrigger && currentState != MODE_OFF) {
     sonar(); // update distance
 
     if (dmm >= DISTANCE_THRESHOLD && !alarm_active) {
@@ -301,11 +289,12 @@ void trigger_alarm() {
   alarm_active = 1;
   if (alarm_mode == 0) {
     timer0_fast_pwm_buzzer();
+    if(debug_mode) usart_send_string(">Mode Fast PWM");
   } else {
-    timer0_phase_correct_pwm_led();
+    timer0_phase_correct_pwm_buzzer();
+    if(debug_mode) usart_send_string(">Mode Phase Correct PWM");
   }
   if (debug_mode) usart_send_string(">Alarm ON\n");
-  usart_send_string(">Alarm ON\n");
 
 }
 
@@ -320,26 +309,27 @@ void stop_alarm() {
 
 //INITs
 
-void timer0_phase_correct_pwm_led() {
-  bitSet(DDRD, PD5); // OC0B = output
-  TCCR0A = (1 << WGM00);                     // Phase-Correct PWM
-  TCCR0A |= (1 << COM0B1);                   // Non-inverting OC0B
-  TCCR0B = (1 << CS01) | (1 << CS00);        // Prescaler 64
-  OCR0B = 200; // Visible LED flash
+void timer0_phase_correct_pwm_buzzer() {
+  bitSet(DDRD, PD5); // Set PD5 as output (OC0B)
+  TCCR0A = (1 << WGM00);                // Phase-Correct PWM
+  TCCR0A |= (1 << COM0B1);              // Non-inverting on OC0B
+  TCCR0B = (1 << CS01) | (1 << CS00);   // Prescaler 64
+  OCR0B = 180;                          // ~70% duty – different pitch
 }
 
 
 void timer0_fast_pwm_buzzer() {
   bitSet(DDRD, PD5); // OC0A = output
   TCCR0A = (1 << WGM00) | (1 << WGM01);           // Fast PWM
-  TCCR0A |= (1 << COM0A1);                        // Non-inverting OC0A
+  TCCR0A |= (1 << COM0B1);                        // Non-inverting OC0A
   TCCR0B = (1 << CS01) | (1 << CS00);             // Prescaler 64
-  OCR0A = 128; // 50% duty
+  OCR0B = 128; // 50% duty
 }
 
 void ext_interrupt_init() {
   
   bitClear(DDRD, PD2);         // INT0 input
+  bitSet(PORTD, PD2);
   bitSet(EIMSK, INT0);         // Enable INT0
   EICRA |= (1 << ISC01);       // Falling edge
   EICRA &= ~(1 << ISC00);
