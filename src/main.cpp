@@ -70,6 +70,8 @@ volatile float temp;
 volatile float lightMeasure;
 volatile uint8_t adcChannel = 0;
 
+volatile float global_temp = 0;
+
 //IC
 float TimeOverflow_1;
 volatile float timePerClick_tc1;
@@ -131,7 +133,7 @@ ISR(INT0_vect) {
   alarm_mode ^= 1; // Toggle mode
 
   if (debug_mode) {
-    usart_send_string(">INT0: Alarm mode switched to ");
+    usart_send_string("INT0 - Alarm mode switched to ");
     usart_send_num(alarm_mode, 1, 0);
     usart_send_string("\n");
   }
@@ -143,7 +145,7 @@ ISR(INT1_vect) {
   
   currentState = (MODE)((currentState + 1) % 3);
   if (debug_mode) {
-    usart_send_string(">INT1: Mode toggled to ");
+    usart_send_string("INT1 - Mode toggled to ");
     usart_send_num(currentState, 1, 0);
     usart_send_string("\n");
   }
@@ -174,9 +176,9 @@ ISR(TIMER1_CAPT_vect) {
     tRise = timeStamp;
     tLow = tRise - tFall;
     dmm = tLow * 343 / 2. * 1000.;
-    usart_send_string(">dmm: ");
+    /*usart_send_string(">dmm: ");
     usart_send_num(dmm, 5, 1);
-    usart_send_string("\n");
+    usart_send_string("\n");*/
   }
   bitToggle(TCCR1B, ICES1);
 }
@@ -207,6 +209,8 @@ ISR(ADC_vect) {
     //float tempK = 1.0 / (log(resistance / R0) / B + (1.0 / T0));
     float tempK = 1.0 / (0.001129148 + (0.000234125 + (0.0000000876741 * resistance * resistance)) * resistance);
     float tempC = tempK - 273.15;
+
+    global_temp = tempC;
     
     if(debug_mode) { //if in debug mode
       usart_send_string(">tempC:");
@@ -243,14 +247,23 @@ int main() {
   while (1) {
   uint8_t lightTrigger = 0;
 
-  if (currentState == MODE_DAY && lightMeasure < 300) {
+  if (currentState == MODE_DAY && lightMeasure < 500) {
     lightTrigger = 1;
-    usart_send_string(">Day\n");
+    if(debug_mode) {
+      usart_send_string("Day\n");
+      usart_send_string(">dmm: ");
+      usart_send_num(dmm, 5, 1);
+      usart_send_string("\n");
+    }
   }
-  if (currentState == MODE_NIGHT && lightMeasure > 400) {
+  if (currentState == MODE_NIGHT && lightMeasure > 500) {
     lightTrigger = 1;
-    usart_send_string(">Night\n");
-   
+    if(debug_mode) {
+      usart_send_string("Night\n");
+      usart_send_string(">dmm: ");
+      usart_send_num(dmm, 5, 1);
+      usart_send_string("\n");
+    }
   }
 
   if (lightTrigger && currentState != MODE_OFF) {
@@ -260,6 +273,13 @@ int main() {
       trigger_alarm();
     } else if (dmm < DISTANCE_THRESHOLD && alarm_active) {
       stop_alarm();
+      usart_send_string("Hello, the current temperature is ");
+      usart_send_num(global_temp, 3, 2); // Send Celsius with 2 decimal places
+      usart_send_string(" degrees celsius,\n");
+
+      usart_send_string("and the light level is ");
+      usart_send_num(lightMeasure, 3, 2); // Send Celsius with 2 decimal places
+      usart_send_string(".\n");
     }
   } else {
     if (alarm_active) {
@@ -289,12 +309,12 @@ void trigger_alarm() {
   alarm_active = 1;
   if (alarm_mode == 0) {
     timer0_fast_pwm_buzzer();
-    if(debug_mode) usart_send_string(">Mode Fast PWM");
+    if(debug_mode) usart_send_string("Mode Fast PWM");
   } else {
     timer0_phase_correct_pwm_buzzer();
-    if(debug_mode) usart_send_string(">Mode Phase Correct PWM");
+    if(debug_mode) usart_send_string("Mode Phase Correct PWM");
   }
-  if (debug_mode) usart_send_string(">Alarm ON\n");
+  if (debug_mode) usart_send_string("Alarm ON\n");
 
 }
 
@@ -303,8 +323,7 @@ void stop_alarm() {
   TCCR0A &= ~((1 << COM0A1) | (1 << COM0B1));
 
   currentState = MODE_OFF;
-  if (debug_mode) usart_send_string(">Alarm OFF\n");
-  usart_send_string(">Alarm OFF\n");
+  if (debug_mode) usart_send_string("Alarm OFF\n");
 }
 
 //INITs
