@@ -14,7 +14,7 @@
 #define velSound 343
 
 //buzzer
-#define pinBuzzer PD0
+#define pinBuzzer PD5
 
 //sonar
 #define pinTrigger PD4
@@ -29,7 +29,7 @@
 #define MODE_off 2
 
 //thresholds
-#define LIGHT_THRESHOLD 700
+#define LIGHT_THRESHOLD 500
 #define DISTANCE_THRESHOLD 200
 
 typedef enum{MODE_DAY, MODE_NIGHT, MODE_OFF} MODE;
@@ -52,13 +52,17 @@ void sonar();
 void adc_init();
 void button_init();
 void timer2_init();
-void buzzer_on();
-void buzzer_off();
+void ext_interrupt_init();
+void timer0_fast_pwm_buzzer();
+void timer0_phase_correct_pwm_led();
+void trigger_alarm();
+void stop_alarm();
 
 //global variables
 bool debug_mode = 0;
 volatile uint8_t alarm_mode = 0;
 volatile uint8_t alarm_active = 0;
+volatile uint8_t alarmCounter = 0;
 
 //timer 2
 volatile uint8_t matchCount = 0;
@@ -120,6 +124,11 @@ ISR(USART_RX_vect) {
 
 //INTURUPTS
 
+
+ISR (TIMER1_OVF_vect) {
+  numOV_1++;
+}
+
 ISR(INT0_vect) {
   alarm_mode ^= 1; // Toggle mode
 
@@ -131,6 +140,7 @@ ISR(INT1_vect) {
     usart_send_num(currentState, 1, 0);
     usart_send_string("\n");
   }
+ 
 }
 
 ISR(TIMER2_COMPA_vect) {
@@ -155,14 +165,10 @@ ISR(TIMER1_CAPT_vect) {
   else {
     tRise = timeStamp;
     tLow = tRise - tFall;
-    
     dmm = tLow * 343 / 2. * 1000.;
-
-    if(debug_mode) { //if debug mode
-      usart_send_string(">Dmm:");
-      usart_send_num(dmm, 3, 3);
-      usart_send_string("\n");
-    }
+    usart_send_string(">dmm: ");
+    usart_send_num(dmm, 5, 1);
+    usart_send_string("\n");
   }
   bitToggle(TCCR1B, ICES1);
 }
@@ -170,18 +176,12 @@ ISR(TIMER1_CAPT_vect) {
 ISR(ADC_vect) {
   
   if (adcChannel == 0) {
-    
+    adc = ADC;
     lightMeasure = adc;
 
     ADMUX = (ADMUX & 0xF0) | 0b0101;
     adcChannel = 1;
-
-    if(debug_mode) { //if in debug mode
-    usart_send_string(">light:");
-    usart_send_num(lightMeasure, 3, 2); // Send Celsius with 2 decimal places
-    usart_send_string("\n");
-  }
-
+    
   }
 
   else {
@@ -203,6 +203,10 @@ ISR(ADC_vect) {
     if(debug_mode) { //if in debug mode
       usart_send_string(">tempC:");
       usart_send_num(tempC, 3, 2); // Send Celsius with 2 decimal places
+      usart_send_string("\n");
+
+      usart_send_string(">light:");
+      usart_send_num(lightMeasure, 3, 2); // Send Celsius with 2 decimal places
       usart_send_string("\n");
     }
 
@@ -239,8 +243,7 @@ int main() {
   button_init();
   sei();
   IC_init();
-  //AC_init();
-  buzzer_init();
+  AC_init();
   adc_init();
   button_init();
   timer2_init();
@@ -248,17 +251,21 @@ int main() {
   timer0_fast_pwm_buzzer();
   bitClear(TCCR0A, COM0A1);
   bitClear(TCCR0A, COM0B1);
+  debug_mode = 1;
 
   while (1) {
   uint8_t lightTrigger = 0;
 
-  if (currentState == MODE_DAY && lightMeasure > LIGHT_THRESHOLD) {
+  if (currentState == MODE_DAY && lightMeasure < LIGHT_THRESHOLD) {
     lightTrigger = 1;
-  } else if (currentState == MODE_NIGHT && lightMeasure < LIGHT_THRESHOLD) {
+    usart_send_string(">Day\n");
+  } else if (currentState == MODE_NIGHT && lightMeasure > LIGHT_THRESHOLD) {
     lightTrigger = 1;
+    usart_send_string(">Night\n");
+   
   }
 
-  if (lightTrigger && currentState != MODE_OFF) {
+  if (!lightTrigger && currentState != MODE_OFF) {
     sonar(); // update distance
 
     if (dmm >= DISTANCE_THRESHOLD && !alarm_active) {
@@ -298,12 +305,17 @@ void trigger_alarm() {
     timer0_phase_correct_pwm_led();
   }
   if (debug_mode) usart_send_string(">Alarm ON\n");
+  usart_send_string(">Alarm ON\n");
+
 }
 
 void stop_alarm() {
   alarm_active = 0;
   TCCR0A &= ~((1 << COM0A1) | (1 << COM0B1));
+
+  currentState = MODE_OFF;
   if (debug_mode) usart_send_string(">Alarm OFF\n");
+  usart_send_string(">Alarm OFF\n");
 }
 
 //INITs
@@ -318,7 +330,7 @@ void timer0_phase_correct_pwm_led() {
 
 
 void timer0_fast_pwm_buzzer() {
-  bitSet(DDRD, PD6); // OC0A = output
+  bitSet(DDRD, PD5); // OC0A = output
   TCCR0A = (1 << WGM00) | (1 << WGM01);           // Fast PWM
   TCCR0A |= (1 << COM0A1);                        // Non-inverting OC0A
   TCCR0B = (1 << CS01) | (1 << CS00);             // Prescaler 64
@@ -339,18 +351,13 @@ void ext_interrupt_init() {
   EICRA &= ~(1 << ISC10);
 }
 
-
-void buzzer_init(){
-  bitSet(DDRD, pinBuzzer);
-}
-
 void timer2_init() {
 
   bitSet(TCCR2A, WGM21);
 
   TCCR2B = (1 << CS22) | (1 << CS21) | (1 << CS20);
 
-  OCR2B = 156;
+  OCR2A = 156;
 
   bitSet(TIMSK2, OCIE2A);
 
@@ -364,18 +371,21 @@ void IC_init() {
   bitSet(TCCR1B, ICNC1); // Noise Cancaleation
   bitSet(TIMSK1, TOIE1); // overflow interupt enable 
   bitSet(TIMSK1, ICIE1); // Input Capture interupt enable
-  TCCR1B |= (1 << CS12); // Prescaler 256
+  TCCR1B = 0b100; // Prescaler 1024
 
   float timer1_clock_freq = 16.0e6 / 256;
   TimeOverflow_1 = 65536 / timer1_clock_freq; // max value of 16 bit / the clock freqencey = the overflow timer
   timePerClick_tc1 = 1. / timer1_clock_freq; // time per click
 }
+
+// Function to initialize the Analog Comparator
 void AC_init() {
   bitClear(DDRD, PD6); // Set PD6 as input
   bitClear(DDRD, PD7); // Set PD7 as input
   //bitSet(ACSR, ACBG); // Bandgap Refrence enabled
-  //bitSet(ACSR, ACIC); //Input Capture inturprs enabled
+  bitSet(ACSR, ACIC); //Input Capture inturprs enabled
 }
+
 
 void adc_init() {
   ADMUX |= (1 << REFS0); //Seting the ADC multiplexier register to ref0 for 5vv
