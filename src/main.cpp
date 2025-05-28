@@ -32,6 +32,15 @@
 typedef enum{MODE_DAY, MODE_NIGHT, MODE_OFF} MODE;
 MODE currentState = MODE_OFF;
 
+const char* mode_names[] = {
+  "MODE_DAY",
+  "MODE_NIGHT",
+  "MODE_OFF"
+};
+const char* alarm_names[] = {
+  "Alarm 1",
+  "Alarm 2"
+};
 
 //USART Declerations
 void usart_init(float baud);
@@ -47,7 +56,6 @@ void IC_init();
 void AC_init();
 void sonar();
 void adc_init();
-void button_init();
 void timer2_init();
 void ext_interrupt_init();
 void timer0_fast_pwm_buzzer();
@@ -131,25 +139,34 @@ ISR (TIMER1_OVF_vect) {
 ISR(INT0_vect) {
   
   alarm_mode ^= 1; // Toggle mode
-
+  /*
   if (debug_mode) {
     usart_send_string("INT0 - Alarm mode switched to ");
     usart_send_num(alarm_mode, 1, 0);
     usart_send_string("\n");
-  }
+  } */
 
-  _delay_us(1000);
+  usart_send_string("Alarm noise switched to ");
+  usart_send_string((char*)alarm_names[alarm_mode]);
+  usart_send_string("\n");
+  _delay_ms(1000);
+  
 
 }
 ISR(INT1_vect) {
   
   currentState = (MODE)((currentState + 1) % 3);
-  if (debug_mode) {
+
+  /*if (debug_mode) {
     usart_send_string("INT1 - Mode toggled to ");
     usart_send_num(currentState, 1, 0);
     usart_send_string("\n");
-  }
-  _delay_us(1000);
+  } */
+
+  usart_send_string("Alarm mode switched to ");
+  usart_send_string((char*)mode_names[currentState]);
+  usart_send_string("\n");
+  _delay_ms(1000);
  
 }
 
@@ -232,22 +249,20 @@ ISR(ADC_vect) {
 
 int main() {
   usart_init_v2(9600);
-  button_init();
   sei();
   IC_init();
   AC_init();
   adc_init();
-  button_init();
   timer2_init();
   ext_interrupt_init();
   bitClear(TCCR0A, COM0A1);
   bitClear(TCCR0A, COM0B1);
-  debug_mode = 1;
+  //debug_mode = 1;
 
   while (1) {
   uint8_t lightTrigger = 0;
 
-  if (currentState == MODE_DAY && lightMeasure < 500) {
+  if (currentState == MODE_DAY && lightMeasure < 300) {
     lightTrigger = 1;
     if(debug_mode) {
       usart_send_string("Day\n");
@@ -418,21 +433,6 @@ void adc_init() {
 
   ADCSRA |= (1 << ADSC);
 }
-
-void button_init() {
-  /*bitClear(DDRB, calThreshBut);
-  bitClear(DDRD, flipLogBut);
-
-  bitSet(PORTB, calThreshBut);
-  bitSet(PORTD, flipLogBut);
-
-  PCICR |= 1 << PCIE0;
-  PCMSK0 |= 1 << PCINT4;
-
-  PCICR |= 1 << PCIE2;
-  PCMSK2 |= 1 << PCINT23; */
-}
-
 
 /*USART FUNCTIONS
 *
