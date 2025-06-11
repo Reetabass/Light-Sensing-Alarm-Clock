@@ -92,15 +92,3 @@ All modules are written in low-level AVR C, fully interrupt-driven, and do not u
 - If alarm is active, user can disable it by waving hand in front of sonar.
 
 ---
-
-## Build Instructions
-
-### Requirements
-
-- AVR Toolchain: `avr-gcc`, `avr-libc`, `avrdude`
-- AVR programmer (e.g. USBasp)
-
-### Build
-
-```bash
-make
